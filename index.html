@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hand Count Romantic Animation</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://www.youtube.com/iframe_api"></script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Montserrat:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root{
+            --bg-1: #0b0f13;
+            --bg-2: #0f1720;
+            --accent: #7c3aed; /* purple accent */
+            --accent-2: #06b6d4; /* teal accent */
+            --glass: rgba(255,255,255,0.04);
+        }
+
+        html,body{height:100%;}
+        body{
+            margin:0;
+            font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+            background: radial-gradient(1200px 600px at 10% 10%, rgba(124,58,237,0.08), transparent), linear-gradient(180deg,var(--bg-1),var(--bg-2));
+            color: #e6eef6;
+            -webkit-font-smoothing:antialiased;
+            -moz-osx-font-smoothing:grayscale;
+        }
+
+        /* container that holds the video and overlays */
+        .stage{
+            position:fixed;
+            inset:0;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            overflow:hidden;
+            background:linear-gradient(180deg, rgba(0,0,0,0.25), transparent);
+        }
+
+        video#webcam{
+            width:100vw;
+            height:100vh;
+            object-fit:cover;
+            transform:scaleX(-1);
+            filter: saturate(1.05) contrast(1.05) brightness(0.9);
+        }
+
+        /* Count badge */
+        .count-badge{
+            position:fixed;
+            top:20px;
+            left:20px;
+            background:linear-gradient(135deg,var(--glass), rgba(255,255,255,0.02));
+            border:1px solid rgba(255,255,255,0.06);
+            color:var(--accent-2);
+            padding:12px 18px;
+            border-radius:999px;
+            font-weight:700;
+            backdrop-filter: blur(6px) saturate(140%);
+            box-shadow:0 6px 30px rgba(2,6,23,0.6);
+        }
+
+        /* Fullscreen button */
+        .fs-btn{
+            position:fixed;
+            top:20px;
+            right:20px;
+            background:linear-gradient(90deg,var(--accent),var(--accent-2));
+            color:#051025;
+            border:none;
+            padding:10px 14px;
+            border-radius:12px;
+            font-weight:700;
+            cursor:pointer;
+            box-shadow:0 8px 30px rgba(124,58,237,0.18);
+        }
+
+        .sound-btn{
+            position:fixed;
+            bottom:20px;
+            right:20px;
+            padding:10px 14px;
+            background:linear-gradient(90deg,var(--accent-2),var(--accent));
+            color:#041223;
+            border-radius:12px;
+            font-weight:800;
+            border:none;
+            cursor:pointer;
+            box-shadow:0 12px 40px rgba(2,6,23,0.6);
+            z-index:60;
+        }
+
+        /* Success modal */
+        #success-message{
+            position:fixed;
+            inset:0;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            pointer-events:none;
+        }
+
+        #success-message .card{
+            width:min(1000px,94%);
+            max-width:1100px;
+            background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02));
+            border:1px solid rgba(255,255,255,0.06);
+            backdrop-filter:blur(10px) saturate(140%);
+            box-shadow:0 30px 80px rgba(2,6,23,0.7);
+            border-radius:18px;
+            padding:48px;
+            text-align:center;
+            color: #f8fafc;
+            transform:translateY(10px) scale(0.98);
+            opacity:0;
+            transition:all .35s cubic-bezier(.2,.9,.3,1);
+            pointer-events:auto;
+        }
+
+        #success-message.show .card{ transform:none; opacity:1; }
+
+        /* Card pop animation */
+        @keyframes popIn {
+            0% { transform: translateY(20px) scale(0.9); opacity:0 }
+            60% { transform: translateY(-6px) scale(1.03); opacity:1 }
+            100% { transform: translateY(0) scale(1); opacity:1 }
+        }
+
+        #success-message.show .card{ animation: popIn 420ms cubic-bezier(.2,.9,.3,1) both; }
+
+        #success-message .title{
+            font-family: 'Great Vibes', cursive;
+            font-size: clamp(42px, 8vw, 120px);
+            font-weight:700;
+            letter-spacing:1px;
+            margin-bottom:6px;
+            color:transparent;
+            background:linear-gradient(90deg,#ff2d55,#ff5c8a); /* red -> pink */
+            -webkit-background-clip:text;
+            background-clip:text;
+            background-size:200% 100%;
+            text-shadow: 0 6px 28px rgba(255,77,105,0.16), 0 2px 8px rgba(255,92,138,0.06);
+            -webkit-text-stroke: 0.6px rgba(0,0,0,0.18);
+            display:inline-flex;
+            align-items:center;
+            gap:14px;
+        }
+
+        .title-emoji{
+            display:inline-block;
+            font-size:0.7em;
+            transform-origin:center;
+            filter: drop-shadow(0 6px 14px rgba(124,58,237,0.16));
+            animation: heartPulse 900ms ease 120ms both;
+        }
+        @keyframes heartPulse{
+            0%{ transform: scale(0.8) rotate(-10deg); opacity:0.9 }
+            40%{ transform: scale(1.18) rotate(6deg); opacity:1 }
+            100%{ transform: scale(1) rotate(0deg); opacity:1 }
+        }
+
+        /* title shimmer */
+        @keyframes shimmer {
+            0% { background-position: 0% 50% }
+            100% { background-position: 200% 50% }
+        }
+        #success-message.show .title{ animation: shimmer 2.4s linear both; }
+
+        /* title pop pulse for emphasis */
+        @keyframes titlePulse {
+            0% { transform: scale(0.96) }
+            50% { transform: scale(1.06) }
+            100% { transform: scale(1) }
+        }
+        #success-message.show .title{ animation: shimmer 2.4s linear both, titlePulse 900ms ease 120ms both; }
+
+        #success-message .sub{
+            color:rgba(230,238,246,0.95);
+            margin-bottom:22px;
+            font-size:20px;
+            font-family: 'Montserrat', system-ui, sans-serif;
+            font-weight:600;
+            opacity:0.95;
+            letter-spacing:1px;
+            transform-origin:center;
+        }
+
+        .action-btn{
+            display:inline-block;
+            padding:12px 22px;
+            border-radius:999px;
+            background:#0f1720;
+            color:var(--accent-2);
+            border:1px solid rgba(124,58,237,0.12);
+            font-weight:800;
+            cursor:pointer;
+            box-shadow:0 10px 30px rgba(6,182,212,0.06);
+        }
+
+        .instagram-link{
+            display:inline-block;
+            margin-top:20px;
+            padding:12px 22px;
+            border-radius:999px;
+            background:linear-gradient(135deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+            color:#fff;
+            text-decoration:none;
+            font-weight:800;
+            cursor:pointer;
+            box-shadow:0 10px 30px rgba(220,39,67,0.2);
+            transition:transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .instagram-link:hover{
+            transform:scale(1.05);
+            box-shadow:0 14px 40px rgba(220,39,67,0.35);
+        }
+
+        /* Heart animation (accent colors) */
+        @keyframes floatUp {
+            0% { transform: translateY(30vh) scale(0.6) rotate(0deg); opacity:1 }
+            100% { transform: translateY(-20vh) scale(1.2) rotate(20deg); opacity:0 }
+        }
+        .heart{ position:fixed; bottom:-40px; font-size:20px; pointer-events:none; animation:floatUp 3s linear forwards; filter: drop-shadow(0 6px 18px rgba(124,58,237,0.2)); transform-origin:center; }
+
+        /* Confetti pieces */
+        .confetti{ position:fixed; width:10px; height:10px; border-radius:2px; pointer-events:none; opacity:1; transform-origin:center; }
+        @keyframes confettiFall {
+            0% { transform: translateY(-10vh) rotate(0deg); opacity:1 }
+            100% { transform: translateY(90vh) rotate(720deg); opacity:0 }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="stage" id="stage">
+        <video id="webcam" autoplay playsinline muted></video>
+
+        <div id="animation-container" class="pointer-events-none"></div>
+
+        <!-- Hidden YouTube player for background music -->
+        <div id="yt-player" style="width:0;height:0;overflow:hidden;position:fixed;left:-10000px;top:-10000px"></div>
+
+        <div class="count-badge">Count: <span id="count-display" class="count-num">0</span></div>
+
+        <button class="fs-btn" id="fsBtn" title="Toggle fullscreen">Enter Fullscreen</button>
+        <button class="sound-btn" id="soundBtn">Enable Sound</button>
+
+        <div id="success-message">
+            <div class="card" role="dialog" aria-modal="true">
+                <div class="title">I LOVE U</div>
+                <div class="sub">💌</div>
+                <button class="action-btn" onclick="resetApp()">Try Again</button>
+                <br>
+                <a href="https://www.instagram.com/dark_._786?igsh=MXYzMHdhbDBoeDFpcw==" target="_blank" class="instagram-link">📸 Follow on Instagram</a>
+            </div>
+        </div>
+    </div>
+
+    <div style="position:fixed;left:50%;transform:translateX(-50%);bottom:18px;color:rgba(230,238,246,0.7);font-size:14px;">Hold up 1, 2, 3, 4 then 5 fingers in front of your camera</div>
+
+    <script>
+        const videoElement = document.getElementById('webcam');
+        const countDisplay = document.getElementById('count-display');
+        const successMessage = document.getElementById('success-message');
+        const animationContainer = document.getElementById('animation-container');
+        const fsBtn = document.getElementById('fsBtn');
+
+        let currentTargetCount = 1; // We track sequence: 1 -> 2 -> 3 -> 4 -> 5
+        let isCompleted = false;
+
+        // Function to create floating hearts
+        function triggerHeartRain() {
+            const heartEmojis = ['❤️','💜','💖','💘','💕'];
+            for (let i = 0; i < 40; i++) {
+                setTimeout(() => {
+                    const heart = document.createElement('div');
+                    heart.innerHTML = heartEmojis[Math.floor(Math.random()*heartEmojis.length)];
+                    heart.classList.add('heart');
+                    const size = Math.round(Math.random()*22)+18;
+                    heart.style.fontSize = size+'px';
+                    heart.style.left = (10 + Math.random() * 80) + 'vw';
+                    heart.style.animationDuration = (Math.random() * 1.6 + 1.6) + 's'; // 1.6-3.2 seconds
+                    heart.style.opacity = 0.95;
+                    animationContainer.appendChild(heart);
+                    
+                    // Remove after animation finishes
+                    setTimeout(() => heart.remove(), 3800);
+                }, i * 80 + Math.random()*200);
+            }
+        }
+
+        function triggerConfetti(){
+            const colors = ['#ff6b6b','#ffd166','#06d6a0','#4d96ff','#a78bfa'];
+            const total = 60;
+            for (let i=0;i<total;i++){
+                const el = document.createElement('div');
+                el.className = 'confetti';
+                el.style.left = (10 + Math.random()*80) + 'vw';
+                el.style.background = colors[Math.floor(Math.random()*colors.length)];
+                const w = Math.round(Math.random()*10)+6;
+                el.style.width = w + 'px';
+                el.style.height = (Math.round(Math.random()*8)+6) + 'px';
+                const delay = Math.random()*300;
+                const dur = Math.random()*1400 + 1200;
+                el.style.animation = `confettiFall ${dur}ms cubic-bezier(.2,.7,.2,1) ${delay}ms both`;
+                el.style.transform = `translateY(-10vh) rotate(${Math.random()*360}deg)`;
+                animationContainer.appendChild(el);
+                setTimeout(()=> el.remove(), dur + delay + 200);
+            }
+        }
+
+        // Logic to count extended fingers
+        function countFingers(landmarks) {
+            // MediaPipe Landmark IDs for tips and bases of fingers
+            const tipIds = [4, 8, 12, 16, 20];
+            let count = 0;
+
+            // Thumb logic (depends on hand orientation, rough approximation based on X coordinates)
+            // Checking if thumb tip is further out than thumb joint
+            if (landmarks[4].x < landmarks[3].x) {
+                count++;
+            }
+
+            // Other 4 fingers logic (If tip is higher up/y-value lower than the joint pip)
+            for (let i = 1; i < 5; i++) {
+                if (landmarks[tipIds[i]].y < landmarks[tipIds[i] - 2].y) {
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        function onResults(results) {
+            if (isCompleted) return;
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                const fingersUp = countFingers(landmarks);
+                
+                // Show detected current fingers up
+                countDisplay.innerText = fingersUp;
+
+                // Simple sequence verification: Must go 1 -> 2 -> 3 -> 4 -> 5
+                if (fingersUp === currentTargetCount) {
+                    if (currentTargetCount === 5) {
+                        isCompleted = true;
+                        successMessage.classList.add('show');
+                        // small delay to sync visuals
+                        setTimeout(()=>{
+                            // local chime (synth) as immediate feedback
+                            try{ playChime(); }catch(e){}
+                            triggerHeartRain();
+                            triggerConfetti();
+                            // start background music if the player is ready
+                            try{
+                                if (ytPlayer && ytPlayer.playVideo && audioUnlocked) {
+                                    ytPlayer.setVolume(52);
+                                    ytPlayer.playVideo();
+                                }
+                            }catch(e){/* ignore */}
+                        },120);
+                    } else {
+                        currentTargetCount++;
+                    }
+                }
+            }
+        }
+
+        // Initialize MediaPipe Hands
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults(onResults);
+
+        // Start Webcam Camera
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({ image: videoElement });
+            },
+            width: 640,
+            height: 480
+        });
+        camera.start();
+
+        // Reset the state to try again
+        function resetApp() {
+            currentTargetCount = 1;
+            isCompleted = false;
+            countDisplay.innerText = '0';
+            successMessage.classList.remove('show');
+            try{ if (ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo(); }catch(e){}
+        }
+
+        // Fullscreen toggle
+        function toggleFullScreen(){
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(()=>{});
+            } else {
+                document.exitFullscreen().catch(()=>{});
+            }
+        }
+
+        fsBtn.addEventListener('click', ()=>{
+            toggleFullScreen();
+        });
+
+        // Update fs button text based on fullscreen change
+        document.addEventListener('fullscreenchange', ()=>{
+            if (document.fullscreenElement) fsBtn.innerText = 'Exit Fullscreen';
+            else fsBtn.innerText = 'Enter Fullscreen';
+        });
+
+        // Audio: simple chime melody generated with WebAudio
+        let audioCtx = null;
+        let audioUnlocked = false;
+        function initAudio(){
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            audioUnlocked = true;
+            // hide the enable button if present
+            try{ document.getElementById('soundBtn').style.display = 'none'; }catch(e){}
+        }
+        // try to unlock audio on first user gesture
+        document.addEventListener('click', initAudio, { once: true });
+
+        function playChime(){
+            initAudio();
+            if (!audioCtx) return;
+            const now = audioCtx.currentTime + 0.02;
+            // simple 4-note arpeggio
+            const notes = [660, 880, 990, 1320];
+            const dur = 0.22;
+            notes.forEach((freq, i) => {
+                const start = now + i * (dur * 0.9);
+                const o = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                o.type = 'sine';
+                o.frequency.value = freq;
+                g.gain.setValueAtTime(0.0001, start);
+                g.gain.linearRampToValueAtTime(0.28, start + 0.02);
+                g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+                o.connect(g);
+                g.connect(audioCtx.destination);
+                o.start(start);
+                o.stop(start + dur + 0.05);
+            });
+        }
+
+        // Visible enable-sound button handler to unlock autoplay restrictions
+        const soundBtn = document.getElementById('soundBtn');
+        if (soundBtn){
+            soundBtn.addEventListener('click', async ()=>{
+                initAudio();
+                // try to play then pause the YouTube player to unlock playback
+                try{
+                    if (ytPlayer && ytPlayer.playVideo){
+                        ytPlayer.setVolume(52);
+                        await ytPlayer.playVideo();
+                        setTimeout(()=>{ try{ ytPlayer.pauseVideo(); }catch(e){} }, 300);
+                    }
+                }catch(e){ /* ignore */ }
+                soundBtn.style.display = 'none';
+            });
+        }
+
+        // YouTube player control
+        let ytPlayer = null;
+        function onYouTubeIframeAPIReady(){
+            // video id from the provided YouTube short link
+            ytPlayer = new YT.Player('yt-player', {
+                height: '0',
+                width: '0',
+                videoId: '9udS0mpi1L4',
+                playerVars: {
+                    autoplay: 0,
+                    controls: 0,
+                    rel: 0,
+                    modestbranding: 1,
+                    playsinline: 1
+                },
+                events: {
+                    onReady: (e)=>{
+                        try{ e.target.setVolume(60); }catch(e){}
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
